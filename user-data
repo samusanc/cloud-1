@@ -4,9 +4,8 @@ users:
     groups: sudo, docker
     shell: /bin/bash
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
-    lock_passwd: true
-    ssh_authorized_keys:
-      - ssh-rsa AAAAB3Nza... your-public-key-here
+    lock_passwd: false
+    passwd: $6$tWOBBUag6WKKawBi$JFHXjtVEcvUW1Esv3Xng85bI2kblzl0cVw4hWRzdyt29fh.aHzX2KNE2w.wfk8baiI0qFpQICF1qDpMvrHGlw
 
 packages:
   - git

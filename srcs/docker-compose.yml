@@ -1,0 +1,60 @@
+services:
+ nginx:
+  image: nginx
+  container_name: nginx
+  depends_on:
+   - wordpress
+  ports: 
+   - "443:443"
+   - "80:80"
+  networks:
+   - cloud_net
+  volumes:
+   - "wordpress_vol:/var/www/html/"
+   - "certificates_vol:/tmp/certi/"
+  restart: unless-stopped
+  env_file:
+   - .env
+
+ mysql:
+  image: mysql
+  container_name: mysql
+  networks:
+   - cloud_net
+  volumes:
+   - "data_base_vol:/var/lib/mysql/"
+  restart: unless-stopped
+  env_file:
+   - .env
+
+ wordpress:
+  image: wordpress:php-fpm
+  container_name: wordpress
+  depends_on:
+   - mysql
+  networks:
+   - cloud_net
+  volumes:
+   - "wordpress_vol:/var/www/html/"
+  restart: unless-stopped
+  env_file:
+   - .env
+
+ phpmyadmin:
+  image: phpmyadmin
+  container_name: phpmyadmin
+  depends_on:
+   - mysql
+  networks:
+   - cloud_net
+  restart: unless-stopped
+  env_file:
+   - .env
+
+networks:
+ cloud_net:
+
+volumes:
+  wordpress_vol:
+  data_base_vol:
+  certificates_vol:

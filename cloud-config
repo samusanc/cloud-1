@@ -1,0 +1,30 @@
+#cloud-config
+users:
+  - name: testuser
+    groups: sudo, docker
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ssh-rsa AAAAB3Nza... your-public-key-here
+
+packages:
+  - git
+  - docker.io
+  - docker-compose
+  - ufw
+  - openssl
+
+runcmd:
+  - hostnamectl set-hostname myserver
+  - systemctl enable docker
+  - systemctl start docker
+  - ufw allow 22
+  - ufw allow 80
+  - ufw allow 443
+  - ufw --force enable
+  - git clone https://github.com/Tagamydev/cloud-1 /opt/repo
+  - mkdir -p /opt/app/certs
+  - cp -rf /opt/repo/docker/srcs/. /opt/app/
+  - openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /opt/app/certs/key.pem -out /opt/app/certs/cert.pem -subj "/CN=localhost"
+  - cd /opt/app && /usr/bin/docker-compose up -d

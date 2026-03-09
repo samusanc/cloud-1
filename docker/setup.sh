@@ -3,8 +3,9 @@ set -euo pipefail
 
 # ─────────────────────────────────────────────
 # Cloud-1 Setup Script
-# Equivalent to cloud-init runcmd section.
-# Run as root (or with sudo) on Ubuntu 20.04 LTS.
+# Works both ways:
+#   1. Called by cloud-init after git clone (bash /opt/repo/docker/setup.sh)
+#   2. Run standalone on a fresh machine     (sudo bash setup.sh)
 # Usage: sudo bash setup.sh
 # ─────────────────────────────────────────────
 
@@ -16,12 +17,14 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
-# ── 1. Install dependencies ──────────────────
-log "Updating package lists..."
-apt-get update -y
-
-log "Installing required packages..."
-apt-get install -y git docker.io docker-compose ufw openssl python3
+# ── 1. Install dependencies (skip if already done by cloud-init) ─────────────
+if ! command -v docker &>/dev/null || ! command -v git &>/dev/null; then
+  log "Installing required packages..."
+  apt-get update -y
+  apt-get install -y git docker.io docker-compose ufw openssl python3
+else
+  log "Packages already present, skipping apt install."
+fi
 
 # ── 2. Configure hostname ────────────────────
 log "Setting hostname to 'myserver'..."
@@ -39,11 +42,19 @@ ufw allow 80
 ufw allow 443
 ufw --force enable
 
-# ── 5. Clone the repo ────────────────────────
+# ── 5. Locate or clone the repo ──────────────
 REPO_URL="https://github.com/Tagamydev/cloud-1"
 REPO_DIR="/opt/repo"
 
-if [[ -d "$REPO_DIR" ]]; then
+# If this script lives inside the repo (e.g. /opt/repo/docker/setup.sh),
+# resolve the repo root automatically so we don't clone twice.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INFERRED_REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if [[ -f "$INFERRED_REPO/.git/config" ]]; then
+  log "Script is running from inside the repo at $INFERRED_REPO"
+  REPO_DIR="$INFERRED_REPO"
+elif [[ -d "$REPO_DIR/.git" ]]; then
   log "Repo already exists at $REPO_DIR — pulling latest..."
   git -C "$REPO_DIR" pull
 else
@@ -67,12 +78,36 @@ openssl req -x509 -nodes -days 365 \
   -out    "$CERTS_DIR/cert.pem" \
   -subj   "/CN=localhost"
 
-# ── 8. Start Docker Compose ──────────────────
+# ── 8. Install systemd service for auto-start on boot ────────────────────────
+log "Installing wordpress-stack systemd service..."
+cat > /etc/systemd/system/wordpress-stack.service << 'SERVICE'
+[Unit]
+Description=WordPress Docker Compose Stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/app
+ExecStart=/usr/bin/docker-compose up -d --remove-orphans
+ExecStop=/usr/bin/docker-compose down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+systemctl daemon-reload
+systemctl enable wordpress-stack.service
+
+# ── 9. Start the stack ───────────────────────
 log "Starting Docker Compose stack..."
-cd "$APP_DIR"
-/usr/bin/docker-compose up -d
+systemctl start wordpress-stack.service
 
 log ""
-log "   → HTTP  : http://localhost"
-log "   → HTTPS : https://localhost"
-log "   → phpMyAdmin: https://localhost/phpmyadmin/"
+log "✅ Setup complete!"
+log "   → HTTP       : http://localhost"
+log "   → HTTPS      : https://localhost"
+log "   → phpMyAdmin : https://localhost/phpmyadmin/"

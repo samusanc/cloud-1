@@ -57,7 +57,7 @@ CERTS_DIR="$APP_DIR/certs"
 
 log "Creating app directory structure..."
 mkdir -p "$CERTS_DIR"
-cp -rf "$REPO_DIR/docker/srcs/." "$APP_DIR/"
+cp -rf "$REPO_DIR/docker/." "$APP_DIR/"
 
 # ── 7. Generate self-signed TLS certificate ──
 log "Generating self-signed TLS certificate..."

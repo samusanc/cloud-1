@@ -1,0 +1,18 @@
+#cloud-config
+users:
+  - name: testuser
+    groups: sudo, docker
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    lock_passwd: false
+    passwd: $6$f6y1helwSXeqASvG$r8IczQrriCT7rYLjxN25pMbP8VSVv/140t.ZGoASNdMCA3Tvlpr/NuckrxDxO5gMizeSFeotv2TUio/FgUHw90
+
+packages:
+  - git
+  - docker.io
+  - docker-compose
+  - ufw
+  - openssl
+
+runcmd:
+  - git clone https://github.com/Tagamydev/cloud-1 /opt/repo

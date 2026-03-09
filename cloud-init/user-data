@@ -4,8 +4,9 @@ users:
     groups: sudo, docker
     shell: /bin/bash
     sudo: ['ALL=(ALL) NOPASSWD:ALL']
-    lock_passwd: false
-    passwd: $6$f6y1helwSXeqASvG$r8IczQrriCT7rYLjxN25pMbP8VSVv/140t.ZGoASNdMCA3Tvlpr/NuckrxDxO5gMizeSFeotv2TUio/FgUHw90
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJkN9vwmUwz33vknCy+85W/ETQX1S0bQfbXvq5VVz4h/ smsanchez1@typsa.es
 
 packages:
   - git
@@ -16,3 +17,5 @@ packages:
 
 runcmd:
   - git clone https://github.com/Tagamydev/cloud-1 /opt/repo
+  - cd /opt/repo/docker
+  - sudo bash ./setup.sh

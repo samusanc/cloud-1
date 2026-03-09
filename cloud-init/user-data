@@ -18,4 +18,4 @@ packages:
 runcmd:
   - git clone https://github.com/Tagamydev/cloud-1 /opt/repo
   - cd /opt/repo/docker
-  - sudo bash ./setup.sh
+  - bash /opt/repo/docker/setup.sh

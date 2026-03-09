@@ -107,7 +107,6 @@ log "Starting Docker Compose stack..."
 systemctl start wordpress-stack.service
 
 log ""
-log "✅ Setup complete!"
 log "   → HTTP       : http://localhost"
 log "   → HTTPS      : https://localhost"
 log "   → phpMyAdmin : https://localhost/phpmyadmin/"

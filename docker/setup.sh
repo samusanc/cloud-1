@@ -73,7 +73,6 @@ cd "$APP_DIR"
 /usr/bin/docker-compose up -d
 
 log ""
-log "✅ Setup complete!"
 log "   → HTTP  : http://localhost"
 log "   → HTTPS : https://localhost"
 log "   → phpMyAdmin: https://localhost/phpmyadmin/"

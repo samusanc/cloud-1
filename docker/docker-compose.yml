@@ -29,7 +29,7 @@ services:
    - .env
 
  wordpress:
-  image: wordpress:php-fpm
+  image: wordpress:fpm
   container_name: wordpress
   depends_on:
    - mysql

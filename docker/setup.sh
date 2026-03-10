@@ -1,12 +1,13 @@
 #!/bin/bash
 set -euo pipefail
+
 # ─────────────────────────────────────────────
 # Cloud-1 Setup Script
-# Handles system prep ONLY. Docker stack is
-# started by the wordpress-app.service systemd unit.
-# Run as root (or with sudo) on Ubuntu 22.04 LTS.
+# Equivalent to cloud-init runcmd section.
+# Run as root (or with sudo) on Ubuntu 20.04 LTS.
 # Usage: sudo bash setup.sh
 # ─────────────────────────────────────────────
+
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
 # ── 0. Must run as root ──────────────────────
@@ -18,6 +19,7 @@ fi
 # ── 1. Install dependencies ──────────────────
 log "Updating package lists..."
 apt-get update -y
+
 log "Installing required packages..."
 apt-get install -y git docker.io docker-compose ufw openssl python3
 
@@ -40,6 +42,7 @@ ufw --force enable
 # ── 5. Clone the repo ────────────────────────
 REPO_URL="https://github.com/Tagamydev/cloud-1"
 REPO_DIR="/opt/repo"
+
 if [[ -d "$REPO_DIR" ]]; then
   log "Repo already exists at $REPO_DIR — pulling latest..."
   git -C "$REPO_DIR" pull
@@ -51,10 +54,9 @@ fi
 # ── 6. Set up app directory ──────────────────
 APP_DIR="/opt/app"
 CERTS_DIR="$APP_DIR/certs"
+
 log "Creating app directory structure..."
 mkdir -p "$CERTS_DIR"
-
-# Copy ALL docker files including .env, docker-compose.yml, nginx.conf
 cp -rf "$REPO_DIR/docker/." "$APP_DIR/"
 
 # ── 7. Generate self-signed TLS certificate ──
@@ -65,31 +67,11 @@ openssl req -x509 -nodes -days 365 \
   -out    "$CERTS_DIR/cert.pem" \
   -subj   "/CN=localhost"
 
-# ── 8. Install systemd service for Docker stack ──
-log "Installing wordpress-app systemd service..."
-cat > /etc/systemd/system/wordpress-app.service << 'EOF'
-[Unit]
-Description=WordPress App (test: python http server)
-After=network-online.target
-Wants=network-online.target
+# ── 8. Start Docker Compose ──────────────────
+log "Starting Docker Compose stack..."
+cd "$APP_DIR"
+/usr/bin/docker-compose up -d
 
-[Service]
-Type=simple
-WorkingDirectory=/opt/app
-ExecStart=/usr/bin/python3 -m http.server 80
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable wordpress-app.service
-
-log ""
-log "Setup complete! The Docker stack will start automatically on next boot."
-log "To start it now manually, run: sudo systemctl start wordpress-app"
 log ""
 log "   → HTTP  : http://localhost"
 log "   → HTTPS : https://localhost"

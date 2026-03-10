@@ -2,6 +2,8 @@
 set -euo pipefail
 # ─────────────────────────────────────────────
 # Cloud-1 Setup Script
+# Handles system prep ONLY. Docker stack is
+# started by the wordpress-app.service systemd unit.
 # Run as root (or with sudo) on Ubuntu 22.04 LTS.
 # Usage: sudo bash setup.sh
 # ─────────────────────────────────────────────
@@ -47,9 +49,6 @@ else
 fi
 
 # ── 6. Set up app directory ──────────────────
-# Use /opt/app to match volume paths in docker-compose.yml:
-#   /opt/app/certs  → nginx SSL certs
-#   /opt/app/nginx.conf → nginx config
 APP_DIR="/opt/app"
 CERTS_DIR="$APP_DIR/certs"
 log "Creating app directory structure..."
@@ -66,11 +65,35 @@ openssl req -x509 -nodes -days 365 \
   -out    "$CERTS_DIR/cert.pem" \
   -subj   "/CN=localhost"
 
-# ── 8. Start Docker Compose ──────────────────
-log "Starting Docker Compose stack..."
-cd "$APP_DIR"
-/usr/bin/docker-compose up -d
+# ── 8. Install systemd service for Docker stack ──
+log "Installing wordpress-app systemd service..."
+cat > /etc/systemd/system/wordpress-app.service << 'EOF'
+[Unit]
+Description=WordPress Docker Compose Stack
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
 
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/app
+ExecStart=/usr/bin/docker-compose up -d --remove-orphans
+ExecStop=/usr/bin/docker-compose down
+TimeoutStartSec=300
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable wordpress-app.service
+
+log ""
+log "Setup complete! The Docker stack will start automatically on next boot."
+log "To start it now manually, run: sudo systemctl start wordpress-app"
 log ""
 log "   → HTTP  : http://localhost"
 log "   → HTTPS : https://localhost"

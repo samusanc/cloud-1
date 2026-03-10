@@ -69,20 +69,16 @@ openssl req -x509 -nodes -days 365 \
 log "Installing wordpress-app systemd service..."
 cat > /etc/systemd/system/wordpress-app.service << 'EOF'
 [Unit]
-Description=WordPress Docker Compose Stack
-Requires=docker.service
-After=docker.service network-online.target
+Description=WordPress App (test: python http server)
+After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 WorkingDirectory=/opt/app
-ExecStart=sudo python3 -m http.server -p 443
-ExecStop=sudo python3 -m http.server -p 443
-TimeoutStartSec=300
+ExecStart=/usr/bin/python3 -m http.server 80
 Restart=on-failure
-RestartSec=30
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target

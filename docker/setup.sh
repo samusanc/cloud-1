@@ -46,8 +46,6 @@ ufw --force enable
 REPO_URL="https://github.com/Tagamydev/cloud-1"
 REPO_DIR="/opt/repo"
 
-# If this script lives inside the repo (e.g. /opt/repo/docker/setup.sh),
-# resolve the repo root automatically so we don't clone twice.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INFERRED_REPO="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -78,7 +76,12 @@ openssl req -x509 -nodes -days 365 \
   -out    "$CERTS_DIR/cert.pem" \
   -subj   "/CN=localhost"
 
-# ── 8. Install systemd service for auto-start on boot ────────────────────────
+# ── 8. Pull images now (no timeout risk later) ───────────────────────────────
+log "Pre-pulling Docker images (this may take a few minutes)..."
+cd "$APP_DIR"
+/usr/bin/docker-compose pull
+
+# ── 9. Install systemd service for auto-start on boot ────────────────────────
 log "Installing wordpress-stack systemd service..."
 cat > /etc/systemd/system/wordpress-stack.service << 'SERVICE'
 [Unit]
@@ -91,9 +94,10 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/app
+# Images are pre-pulled, so startup is fast — but infinity avoids any edge case
+TimeoutStartSec=infinity
 ExecStart=/usr/bin/docker-compose up -d --remove-orphans
 ExecStop=/usr/bin/docker-compose down
-TimeoutStartSec=300
 
 [Install]
 WantedBy=multi-user.target
@@ -102,7 +106,7 @@ SERVICE
 systemctl daemon-reload
 systemctl enable wordpress-stack.service
 
-# ── 9. Start the stack ───────────────────────
+# ── 10. Start the stack ──────────────────────
 log "Starting Docker Compose stack..."
 systemctl start wordpress-stack.service
 

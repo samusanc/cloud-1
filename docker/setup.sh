@@ -1,69 +1,77 @@
 #!/bin/bash
+set -euo pipefail
+# ─────────────────────────────────────────────
+# Cloud-1 Setup Script
+# Run as root (or with sudo) on Ubuntu 22.04 LTS.
+# Usage: sudo bash setup.sh
+# ─────────────────────────────────────────────
+log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
-# Exit on error
-set -e
-
-# ── 1. Configuration ───────────────────────────────────────
-APP_DIR="/opt/wordpress-app"
-REPO_DIR="/opt/repo"
-LOG_FILE="/var/log/app_setup.log"
-DOCKER_COMPOSE_BIN="docker-compose"
-
-# ── 2. Logging Function ────────────────────────────────────
-log() {
-    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
-}
-
-log "Starting optimized setup process..."
-
-# ── 3. Create Directory Structure ──────────────────────────
-log "Creating application directories..."
-sudo mkdir -p "$APP_DIR/nginx/conf.d"
-sudo mkdir -p "$APP_DIR/nginx/ssl"
-sudo mkdir -p "$APP_DIR/wordpress"
-sudo mkdir -p "$APP_DIR/mysql_data"
-
-# ── 4. Copy Docker Configs ─────────────────────────────────
-log "Copying configuration files from repo..."
-sudo cp "$REPO_DIR/docker/docker-compose.yml" "$APP_DIR/"
-sudo cp "$REPO_DIR/docker/nginx.conf" "$APP_DIR/nginx/conf.d/default.conf"
-
-# ── 5. Generate SSL (Self-Signed for now) ──────────────────
-if [ ! -f "$APP_DIR/nginx/ssl/server.crt" ]; then
-    log "Generating self-signed SSL certificate..."
-    sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-        -keyout "$APP_DIR/nginx/ssl/server.key" \
-        -out "$APP_DIR/nginx/ssl/server.crt" \
-        -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
+# ── 0. Must run as root ──────────────────────
+if [[ $EUID -ne 0 ]]; then
+  echo "Please run as root: sudo bash setup.sh"
+  exit 1
 fi
 
-# ── 6. Sequential Image Pulling (STALL PREVENTION) ────────
-log "Pulling Docker images sequentially to prevent network congestion..."
+# ── 1. Install dependencies ──────────────────
+log "Updating package lists..."
+apt-get update -y
+log "Installing required packages..."
+apt-get install -y git docker.io docker-compose ufw openssl python3
+
+# ── 2. Configure hostname ────────────────────
+log "Setting hostname to 'myserver'..."
+hostnamectl set-hostname myserver
+
+# ── 3. Enable & start Docker ─────────────────
+log "Enabling Docker service..."
+systemctl enable docker
+systemctl start docker
+
+# ── 4. Configure UFW firewall ────────────────
+log "Configuring firewall (UFW)..."
+ufw allow 22
+ufw allow 80
+ufw allow 443
+ufw --force enable
+
+# ── 5. Clone the repo ────────────────────────
+REPO_URL="https://github.com/Tagamydev/cloud-1"
+REPO_DIR="/opt/repo"
+if [[ -d "$REPO_DIR" ]]; then
+  log "Repo already exists at $REPO_DIR — pulling latest..."
+  git -C "$REPO_DIR" pull
+else
+  log "Cloning repo from $REPO_URL..."
+  git clone "$REPO_URL" "$REPO_DIR"
+fi
+
+# ── 6. Set up app directory ──────────────────
+# Use /opt/app to match volume paths in docker-compose.yml:
+#   /opt/app/certs  → nginx SSL certs
+#   /opt/app/nginx.conf → nginx config
+APP_DIR="/opt/app"
+CERTS_DIR="$APP_DIR/certs"
+log "Creating app directory structure..."
+mkdir -p "$CERTS_DIR"
+
+# Copy ALL docker files including .env, docker-compose.yml, nginx.conf
+cp -rf "$REPO_DIR/docker/." "$APP_DIR/"
+
+# ── 7. Generate self-signed TLS certificate ──
+log "Generating self-signed TLS certificate..."
+openssl req -x509 -nodes -days 365 \
+  -newkey rsa:2048 \
+  -keyout "$CERTS_DIR/key.pem" \
+  -out    "$CERTS_DIR/cert.pem" \
+  -subj   "/CN=localhost"
+
+# ── 8. Start Docker Compose ──────────────────
+log "Starting Docker Compose stack..."
 cd "$APP_DIR"
+/usr/bin/docker-compose up -d
 
-images=("mysql" "wordpress" "nginx" "phpmyadmin")
-
-for img in "${images[@]}"; do
-    log ">>> Pulling image: $img"
-    # Retry loop: Try up to 3 times per image
-    for i in {1..3}; do
-        if sudo $DOCKER_COMPOSE_BIN pull "$img"; then
-            log "Successfully pulled $img."
-            break
-        else
-            if [ $i -lt 3 ]; then
-                log "Warning: Pull failed for $img. Retrying ($i/3) in 10 seconds..."
-                sleep 10
-            else
-                log "Error: Failed to pull $img after 3 attempts. Check your internet connection."
-                exit 1
-            fi
-        fi
-    done
-done
-
-# ── 7. Start Containers ────────────────────────────────────
-log "Launching containers..."
-sudo $DOCKER_COMPOSE_BIN up -d
-
-log "Setup Complete! Your site should be accessible shortly."
+log ""
+log "   → HTTP  : http://localhost"
+log "   → HTTPS : https://localhost"
+log "   → phpMyAdmin: https://localhost/phpmyadmin/"

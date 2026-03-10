@@ -7,6 +7,8 @@ users:
     lock_passwd: true
     ssh_authorized_keys:
       - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJkN9vwmUwz33vknCy+85W/ETQX1S0bQfbXvq5VVz4h/ smsanchez1@typsa.es
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFv4iQR4oxRri5uPFF4L19YSvHSimko2emA39pabZGLj samu2004ssmm@gmail.com
+
 
 packages:
   - git
@@ -16,7 +18,8 @@ packages:
   - openssl
 
 runcmd:
-  # Wait for network, clone the repo, and execute the setup script in one go
+  - growpart /dev/sda 1
+  - resize2fs /dev/sda1
   - |
     timeout 300 sh -c 'until ping -c 1 github.com; do sleep 2; done'
     git clone https://github.com/Tagamydev/cloud-1 /opt/repo

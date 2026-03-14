@@ -84,3 +84,79 @@ log ""
 log "   → HTTP  : http://localhost"
 log "   → HTTPS : https://localhost"
 log "   → phpMyAdmin: https://localhost/phpmyadmin/"
+
+# ── 10. DuckDNS Dynamic DNS Setup ───────────
+log ""
+log "─────────────────────────────────────────────"
+log "Setting up DuckDNS dynamic DNS..."
+log "─────────────────────────────────────────────"
+
+# Check that cron is running
+log "Checking cron is running..."
+if ! ps -ef | grep cr[o]n | grep -v grep | grep -q .; then
+  log "WARNING: cron does not appear to be running."
+  log "Please install and start cron for your Linux distribution before continuing."
+  log "  e.g. Ubuntu/Debian : apt-get install -y cron && systemctl start cron"
+  log "  e.g. Alpine        : apk add dcron && rc-update add dcron"
+  log "  e.g. CentOS/RHEL   : yum install -y cronie && systemctl start crond"
+  log "Exiting — re-run this script once cron is available."
+  exit 1
+fi
+log "cron is running ✓"
+
+# Check that curl is installed
+log "Checking curl is installed..."
+if ! command -v curl >/dev/null 2>&1; then
+  log "WARNING: curl is not installed."
+  log "Please install curl for your Linux distribution before continuing."
+  log "  e.g. Ubuntu/Debian : apt-get install -y curl"
+  log "  e.g. Alpine        : apk add curl"
+  log "  e.g. CentOS/RHEL   : yum install -y curl"
+  log "Exiting — re-run this script once curl is available."
+  exit 1
+fi
+log "curl is installed ✓"
+
+# Create DuckDNS directory and script
+log "Creating DuckDNS directory and update script..."
+DUCK_DIR="$HOME/duckdns"
+mkdir -p "$DUCK_DIR"
+
+cat > "$DUCK_DIR/duck.sh" <<'DUCKSCRIPT'
+echo url="https://www.duckdns.org/update?domains=lanubedelgatoargentino&token=56d14142-d773-4ca1-b424-32d55110105f&ip=" | curl -k -o ~/duckdns/duck.log -K -
+DUCKSCRIPT
+
+chmod 700 "$DUCK_DIR/duck.sh"
+log "duck.sh created and made executable ✓"
+
+# Add cron job (every 5 minutes) if not already present
+log "Registering DuckDNS cron job (every 5 minutes)..."
+CRON_JOB="*/5 * * * * $DUCK_DIR/duck.sh >/dev/null 2>&1"
+if crontab -l 2>/dev/null | grep -qF "$DUCK_DIR/duck.sh"; then
+  log "Cron job already exists — skipping."
+else
+  ( crontab -l 2>/dev/null; echo "$CRON_JOB" ) | crontab -
+  log "Cron job added ✓"
+fi
+
+# Run the script once now to test
+log "Running duck.sh to test the connection..."
+"$DUCK_DIR/duck.sh"
+
+log "Checking DuckDNS response..."
+if [[ -f "$DUCK_DIR/duck.log" ]]; then
+  DUCK_RESULT=$(cat "$DUCK_DIR/duck.log")
+  if [[ "$DUCK_RESULT" == "OK" ]]; then
+    log "DuckDNS update: OK ✓"
+  else
+    log "DuckDNS update: $DUCK_RESULT — check your token/domain and retry."
+  fi
+else
+  log "duck.log not found — something went wrong with the curl request."
+fi
+
+log ""
+log "DuckDNS setup complete."
+log "   → Update log : $DUCK_DIR/duck.log"
+log "   → Script     : $DUCK_DIR/duck.sh"
+log "   → Cron       : every 5 minutes"

@@ -50,7 +50,7 @@ ufw allow 443
 ufw --force enable
 
 # ── 6. Clone the repo ────────────────────────
-REPO_URL="https://github.com/Tagamydev/cloud-1"
+REPO_URL="https://github.com/samusanc/cloud-1"
 REPO_DIR="/opt/repo"
 if [[ -d "$REPO_DIR" ]]; then
   log "Repo already exists at $REPO_DIR — pulling latest..."

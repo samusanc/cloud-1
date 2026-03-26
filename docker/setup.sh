@@ -2,7 +2,6 @@
 set -euo pipefail
 # ─────────────────────────────────────────────
 # Cloud-1 Setup Script
-# Equivalent to cloud-init runcmd section.
 # Run as root (or with sudo) on Ubuntu 20.04 LTS.
 # Usage: sudo bash setup.sh
 # ─────────────────────────────────────────────
@@ -50,7 +49,7 @@ ufw allow 443
 ufw --force enable
 
 # ── 6. Clone the repo ────────────────────────
-REPO_URL="https://github.com/samusanc/cloud-1"
+REPO_URL="https://github.com/Tagamydev/cloud-1"
 REPO_DIR="/opt/repo"
 if [[ -d "$REPO_DIR" ]]; then
   log "Repo already exists at $REPO_DIR — pulling latest..."
@@ -67,10 +66,18 @@ log "Creating app directory structure..."
 mkdir -p "$CERTS_DIR"
 cp -rf "$REPO_DIR/docker/." "$APP_DIR/"
 
-# ── 7b. Restore wp-content from saved word/ directory ────
+# ── 7b. Place SQL seed file ──────────────────
+log "Copying SQL seed file..."
+DB_DIR="$APP_DIR/db"
+mkdir -p "$DB_DIR"
+# NOTE: sql.qsl is intentionally misspelled in the repo — copy as seed.sql
+cp "$REPO_DIR/sql.qsl" "$DB_DIR/seed.sql"
+
+# ── 7c. Restore wp-content from saved word/ directory ──
 log "Restoring wp-content from saved files..."
-# The wordpress:fpm container uses www-data (uid 33)
+mkdir -p "$APP_DIR/wp-content"
 cp -rf "$REPO_DIR/word/wp-content/." "$APP_DIR/wp-content/"
+# www-data uid 33 — matches wordpress:fpm
 chown -R 33:33 "$APP_DIR/wp-content"
 
 # ── 8. Generate self-signed TLS certificate ──
@@ -81,15 +88,12 @@ openssl req -x509 -nodes -days 365 \
   -out    "$CERTS_DIR/cert.pem" \
   -subj   "/CN=localhost"
 
-# ── 8b. Place SQL seed file ──────────────────────────────
-DB_DIR="$APP_DIR/db"
-mkdir -p "$DB_DIR"
-cp "$REPO_DIR/sql.qsl" "$DB_DIR/seed.sql"
-
 # ── 9. Start Docker Compose ──────────────────
 log "Starting Docker Compose stack..."
 cd "$APP_DIR"
-/usr/bin/docker-compose up -d
+# Bring down any previous run first (idempotency)
+docker-compose down || true
+docker-compose up -d
 
 log ""
 log "   → HTTP  : http://localhost"

@@ -53,6 +53,7 @@ services:
     user: "33:33"    # www-data — matches wordpress:fpm file ownership
     volumes:
       - "wordpress_vol:/var/www/html/"
+      - "/opt/app/wp-content:/var/www/html/wp-content"
       - "/opt/app/wp-setup.sh:/usr/local/bin/wp-setup.sh:ro"
       - "/opt/app/db/seed.sql:/docker-entrypoint-initdb/seed.sql:ro"
     entrypoint: ["bash", "/usr/local/bin/wp-setup.sh"]

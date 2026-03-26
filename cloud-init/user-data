@@ -22,7 +22,7 @@ runcmd:
   - resize2fs /dev/sda1
   - |
     timeout 300 sh -c 'until ping -c 1 github.com; do sleep 2; done'
-    git clone https://github.com/Tagamydev/cloud-1 /opt/repo
+    git clone https://github.com/samusanc/cloud-1 /opt/repo
     if [ -f /opt/repo/docker/setup.sh ]; then
       bash /opt/repo/docker/setup.sh
     else

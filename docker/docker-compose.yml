@@ -37,12 +37,11 @@ services:
       - cloud_net
     volumes:
       - "wordpress_vol:/var/www/html/"
-      - "/opt/app/wp-content:/var/www/html/wp-content"  # restores saved themes/plugins/uploads
+      - "/opt/app/wp-content:/var/www/html/wp-content"
     restart: unless-stopped
     env_file:
       - .env
 
-  # ── Runs once, imports + configures WP, then exits cleanly ───────────────────
   wp-cli:
     image: wordpress:cli
     container_name: wp-cli
@@ -51,7 +50,7 @@ services:
       - mysql
     networks:
       - cloud_net
-    user: "33:33"    # www-data — matches wordpress:fpm file ownership
+    user: "33:33"
     volumes:
       - "wordpress_vol:/var/www/html/"
       - "/opt/app/wp-setup.sh:/usr/local/bin/wp-setup.sh:ro"

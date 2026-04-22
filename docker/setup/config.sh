@@ -9,7 +9,7 @@ log "Installing required packages..."
 apt-get install -y git docker.io docker-compose ufw openssl python3
 
 log "setting up hostname"
-hostnamectl set-hostname myserver
+#hostnamectl set-hostname myserver
 
 log "Configuring firewall (UFW)..."
 ufw allow 22

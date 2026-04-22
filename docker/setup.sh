@@ -21,17 +21,14 @@ fi
 
 ./setup/config.sh
 
-# ── 7. Set up app directory ──────────────────
 log "Creating app directory structure..."
 mkdir -p "$CERTS_DIR"
 cp -rf "$REPO_DIR/docker/." "$APP_DIR/"
 
-# ── 7b. Place SQL seed file ──────────────────
 log "Copying SQL seed file..."
 mkdir -p "$DB_DIR"
 cp "$REPO_DIR/sql.qsl" "$DB_DIR/seed.sql"
 
-# ── 7c. Restore wp-content from saved word/ directory ──
 log "Restoring wp-content from saved files..."
 mkdir -p "$APP_DIR/wp-content"
 cp -rf "$REPO_DIR/word/wp-content/." "$APP_DIR/wp-content/"

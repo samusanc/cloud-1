@@ -404,7 +404,7 @@ CREATE TABLE `wp_users` (
 
 LOCK TABLES `wp_users` WRITE;
 /*!40000 ALTER TABLE `wp_users` DISABLE KEYS */;
-INSERT INTO `wp_users` VALUES (1,'elgatoargentino','$wp$2y$10$Nw7EKwfwnzKoTJwhFbIwmusQskNqa6vKbWtp1FfcR9QQrVxegXtYe','elgatoargentino','samusanc@outlook.com','https://158.158.49.106','2026-03-17 19:36:43','',0,'elgatoargentino');
+INSERT INTO `wp_users` VALUES (1,'admin','__PLACEHOLDER_PASS__','admin','admin@example.com','','2026-03-17 19:36:43','',0,'admin');
 /*!40000 ALTER TABLE `wp_users` ENABLE KEYS */;
 UNLOCK TABLES;
 SET @@SESSION.SQL_LOG_BIN = @MYSQLDUMP_TEMP_LOG_BIN;

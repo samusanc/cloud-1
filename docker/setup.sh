@@ -1,48 +1,73 @@
 #!/bin/bash
-
-APP_DIR="/opt/app"
-CERTS_DIR="$APP_DIR/certs"
-DB_DIR="$APP_DIR/db"
+# setup.sh — One-shot provisioning script for a fresh VM.
+# Run once: sudo bash setup.sh
+# After that, just use: docker compose up -d
 
 set -euo pipefail
-log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
-# root check!
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CERTS_DIR="$SCRIPT_DIR/certs"
+
+log() { echo "[setup $(date '+%H:%M:%S')] $*"; }
+
+# ── Root check ───────────────────────────────────────────────────
 if [[ $EUID -ne 0 ]]; then
   echo "Please run as root: sudo bash setup.sh"
   exit 1
 fi
 
-# ── 1. Fix MTU (VirtualBox NAT drops large packets) ──
-#log "Fixing MTU on virtual NIC..."
-#IFACE=$(ip route | grep default | awk '{print $5}')
-#ip link set "$IFACE" mtu 1450
-#log "MTU set to 1450 on $IFACE"
+# ── 1. System packages ──────────────────────────────────────────
+log "Waiting for apt lock to clear..."
+while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+  log "dpkg locked — waiting..."
+  sleep 5
+done
 
-./setup/config.sh
+apt-get update -y
+apt-get install -y git docker.io docker-compose-plugin ufw openssl curl
 
-log "Creating app directory structure..."
-mkdir -p "$CERTS_DIR"
-cp -rf "$REPO_DIR/docker/." "$APP_DIR/"
+# ── 2. Firewall ─────────────────────────────────────────────────
+log "Configuring firewall..."
+ufw allow 22/tcp
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw --force enable
 
-log "Copying SQL seed file..."
-mkdir -p "$DB_DIR"
-cp "$REPO_DIR/sql.qsl" "$DB_DIR/seed.sql"
+# ── 3. Docker ────────────────────────────────────────────────────
+log "Enabling Docker..."
+systemctl enable docker
+systemctl start docker
 
-log "Restoring wp-content from saved files..."
-mkdir -p "$APP_DIR/wp-content"
-cp -rf "$REPO_DIR/word/wp-content/." "$APP_DIR/wp-content/"
-# www-data uid 33 — matches wordpress:fpm
-chown -R 33:33 "$APP_DIR/wp-content"
+# ── 4. Self-signed TLS certificate ──────────────────────────────
+if [ ! -f "$CERTS_DIR/cert.pem" ] || [ ! -f "$CERTS_DIR/key.pem" ]; then
+  log "Generating self-signed TLS certificate..."
+  mkdir -p "$CERTS_DIR"
+  openssl req -x509 -nodes -days 365 \
+    -newkey rsa:2048 \
+    -keyout "$CERTS_DIR/key.pem" \
+    -out    "$CERTS_DIR/cert.pem" \
+    -subj   "/CN=localhost"
+  log "Certificate created."
+else
+  log "Certificates already exist — skipping."
+fi
 
-./setup/certificates.sh
+# ── 5. Fix wp-content permissions ────────────────────────────────
+log "Fixing wp-content ownership..."
+mkdir -p "$SCRIPT_DIR/wp/wp-content"
+chown -R 33:33 "$SCRIPT_DIR/wp/wp-content"
 
+# ── 6. Launch ────────────────────────────────────────────────────
 log "Starting Docker Compose stack..."
-cd "$APP_DIR"
-docker-compose down || true
-docker-compose up -d
+cd "$SCRIPT_DIR"
+docker compose down --remove-orphans 2>/dev/null || true
+docker compose up -d
 
 log ""
-log "   → HTTP  : http://localhost"
-log "   → HTTPS : https://localhost"
-log "   → phpMyAdmin: https://localhost/phpmyadmin/"
+log "  Stack is starting up. Check logs with:"
+log "    docker compose logs -f"
+log ""
+log "  Endpoints (after ~30s for MySQL init):"
+log "    HTTP  : http://localhost"
+log "    HTTPS : https://localhost"
+log ""

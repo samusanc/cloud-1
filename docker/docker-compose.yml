@@ -1,24 +1,28 @@
 services:
   nginx:
-    image: nginx
+    image: nginx:1.27-alpine
     container_name: nginx
     depends_on:
-      - wordpress
+      wordpress:
+        condition: service_healthy
     ports:
       - "443:443"
       - "80:80"
     networks:
       - cloud_net
     volumes:
-      - "wordpress_vol:/var/www/html/"
-      - "/opt/app/certs:/tmp/certi/"
-      - "/opt/app/nginx.conf:/etc/nginx/conf.d/default.conf"
+      - "wordpress_vol:/var/www/html/:ro"
+      - "./certs:/tmp/certi/:ro"
+      - "./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro"
     restart: unless-stopped
-    env_file:
-      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsk https://localhost/ || curl -fs http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   mysql:
-    image: mysql
+    image: mysql:8.0
     container_name: mysql
     networks:
       - cloud_net
@@ -27,52 +31,73 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   wordpress:
-    image: wordpress:fpm
+    image: wordpress:6.7-fpm-alpine
     container_name: wordpress
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
     networks:
       - cloud_net
     volumes:
       - "wordpress_vol:/var/www/html/"
-      - "/opt/app/wp-content:/var/www/html/wp-content"
+      - "./wp/wp-content:/var/www/html/wp-content"
     restart: unless-stopped
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD-SHELL", "php-fpm-healthcheck || kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   wp-cli:
-    image: wordpress:cli
+    image: wordpress:cli-2.11
     container_name: wp-cli
     depends_on:
-      - wordpress
-      - mysql
+      wordpress:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
     networks:
       - cloud_net
     user: "33:33"
     volumes:
       - "wordpress_vol:/var/www/html/"
-      - "/opt/app/wp-setup.sh:/usr/local/bin/wp-setup.sh:ro"
-      - "/opt/app/db/seed.sql:/docker-entrypoint-initdb/seed.sql:ro"
+      - "./wp/wp-setup.sh:/usr/local/bin/wp-setup.sh:ro"
+      - "./sql/database.sql:/docker-entrypoint-initdb/seed.sql:ro"
     entrypoint: ["bash", "/usr/local/bin/wp-setup.sh"]
-    restart: on-failure
+    restart: "no"
     env_file:
       - .env
 
   phpmyadmin:
-    image: phpmyadmin
+    image: phpmyadmin:5.2-apache
     container_name: phpmyadmin
     depends_on:
-      - mysql
+      mysql:
+        condition: service_healthy
     networks:
       - cloud_net
+    environment:
+      - PMA_HOST=mysql
+      - PMA_ABSOLUTE_URI=/phpmyadmin/
+      # Restrict to localhost only via nginx — no direct port exposure
     restart: unless-stopped
     env_file:
       - .env
 
 networks:
   cloud_net:
+    driver: bridge
 
 volumes:
   wordpress_vol:

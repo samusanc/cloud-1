@@ -19,8 +19,6 @@ services:
   mysql:
     image: mysql:8.0
     container_name: mysql
-    # Disable SSL on internal Docker network — wp-cli's MariaDB client
-    # rejects MySQL's auto-generated self-signed certificate otherwise.
     command: --default-authentication-plugin=mysql_native_password --skip-ssl
     networks:
       - cloud_net
@@ -68,9 +66,12 @@ services:
     networks:
       - cloud_net
     user: "33:33"
+    environment:
+      - HOME=/tmp
     volumes:
       - "wordpress_vol:/var/www/html/"
       - "./wp/wp-setup.sh:/usr/local/bin/wp-setup.sh:ro"
+      - "./wp/my.cnf:/tmp/.my.cnf:ro"
       - "./sql/database.sql:/docker-entrypoint-initdb/seed.sql:ro"
     entrypoint: ["bash", "/usr/local/bin/wp-setup.sh"]
     restart: on-failure:3

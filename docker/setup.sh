@@ -24,7 +24,7 @@ while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
 done
 
 apt-get update -y
-apt-get install -y git docker.io docker-compose-plugin ufw openssl curl
+#apt-get install -y git docker.io docker-compose-plugin ufw openssl curl
 
 # ── 2. Firewall ─────────────────────────────────────────────────
 log "Configuring firewall..."

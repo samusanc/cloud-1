@@ -1,70 +1,99 @@
 #!/bin/bash
 # wp-setup.sh — Runs inside the wp-cli container.
-# Waits for wp-config.php + MySQL, imports the seed DB, then patches the
-# admin credentials using values from .env so no secrets live in the dump.
+# Uses raw PHP for MySQL connectivity and SQL import to avoid
+# MariaDB CLI SSL issues entirely.
 
 set -euo pipefail
 
 log() { echo "[wp-setup $(date '+%H:%M:%S')] $*"; }
 
+DB_HOST="${WORDPRESS_DB_HOST:-mysql}"
+DB_USER="${WORDPRESS_DB_USER}"
+DB_PASS="${WORDPRESS_DB_PASSWORD}"
+DB_NAME="${WORDPRESS_DB_NAME}"
+DB_ROOT_PASS="${MYSQL_ROOT_PASSWORD}"
 MAX_TRIES=60
+SEED_FILE="/docker-entrypoint-initdb/seed.sql"
 
 # ── 1. Wait for wp-config.php ────────────────────────────────────
 log "Waiting for wp-config.php..."
 for i in $(seq 1 $MAX_TRIES); do
-  if [ -f /var/www/html/wp-config.php ]; then
-    log "wp-config.php found (attempt $i)."
-    break
-  fi
-  if [ "$i" -eq "$MAX_TRIES" ]; then
-    log "ERROR: wp-config.php not found after $MAX_TRIES attempts."
-    exit 1
-  fi
+  [ -f /var/www/html/wp-config.php ] && { log "wp-config.php found (attempt $i)."; break; }
+  [ "$i" -eq "$MAX_TRIES" ] && { log "ERROR: wp-config.php not found."; exit 1; }
   sleep 3
 done
 
-# ── 2. Wait for MySQL via PHP (avoids MariaDB CLI SSL issues) ────
-log "Waiting for MySQL at ${WORDPRESS_DB_HOST:-mysql} (via PHP)..."
+# ── 2. Wait for MySQL via raw PHP ────────────────────────────────
+log "Waiting for MySQL at $DB_HOST..."
 for i in $(seq 1 $MAX_TRIES); do
-  # Use wp eval to test the DB connection through PHP's mysqli,
-  # which doesn't have the MariaDB client SSL problem.
-  if wp eval "global \$wpdb; \$wpdb->check_connection();" 2>/dev/null; then
+  RESULT=$(php -r "
+    \$c = @new mysqli('$DB_HOST', 'root', '$DB_ROOT_PASS', '$DB_NAME');
+    if (\$c->connect_error) { exit(1); }
+    echo 'ok';
+  " 2>/dev/null) || true
+
+  if [ "$RESULT" = "ok" ]; then
     log "MySQL is ready (attempt $i)."
     break
   fi
   if [ "$i" -eq "$MAX_TRIES" ]; then
     log "ERROR: MySQL not reachable after $MAX_TRIES attempts."
-    log "Debug — trying wp eval:"
-    wp eval "global \$wpdb; \$wpdb->check_connection();" 2>&1 || true
-    log "Debug — trying wp db check:"
-    wp db check 2>&1 || true
+    php -r "
+      \$c = @new mysqli('$DB_HOST', 'root', '$DB_ROOT_PASS', '$DB_NAME');
+      echo \$c->connect_error ?? 'no error' ;
+    " 2>&1
     exit 1
   fi
   sleep 3
 done
 
-# ── 3. Import the seed SQL if the DB is empty ────────────────────
-TABLE_COUNT=$(wp eval "
-  global \$wpdb;
-  \$result = \$wpdb->get_var(\"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DB_NAME\");
-  echo \$result;
+# ── 3. Check if DB has tables ────────────────────────────────────
+TABLE_COUNT=$(php -r "
+  \$c = new mysqli('$DB_HOST', 'root', '$DB_ROOT_PASS', '$DB_NAME');
+  \$r = \$c->query(\"SELECT COUNT(*) AS cnt FROM information_schema.tables WHERE table_schema = '$DB_NAME'\");
+  echo \$r->fetch_assoc()['cnt'];
 " 2>/dev/null || echo "0")
 
-log "Found $TABLE_COUNT tables in database."
+log "Found $TABLE_COUNT tables in '$DB_NAME'."
 
+# ── 4. Import seed SQL if DB is empty ────────────────────────────
 if [ "$TABLE_COUNT" -lt 2 ]; then
-  log "Database looks empty — importing seed SQL..."
-  if [ -f /docker-entrypoint-initdb/seed.sql ]; then
-    # Try import; pass --skip-ssl in case my.cnf isn't picked up
-    if wp db import /docker-entrypoint-initdb/seed.sql 2>/dev/null; then
-      log "Seed SQL imported successfully."
-    else
-      log "First import attempt failed, retrying with explicit --skip-ssl..."
-      wp db import /docker-entrypoint-initdb/seed.sql -- --skip-ssl 2>&1
-      log "Seed SQL imported successfully (with --skip-ssl)."
-    fi
+  if [ -f "$SEED_FILE" ]; then
+    log "Cleaning SQL dump (stripping SUPER-privilege statements)..."
+    # Strip statements that require SUPER/SESSION_VARIABLES_ADMIN
+    CLEAN_SQL="/tmp/seed_clean.sql"
+    sed -E \
+      -e '/^SET @@SESSION\.SQL_LOG_BIN/d' \
+      -e '/^SET @@GLOBAL\./d' \
+      -e '/^SET @@session\./d' \
+      -e '/MYSQLDUMP_TEMP_LOG_BIN/d' \
+      "$SEED_FILE" > "$CLEAN_SQL"
+
+    log "Importing seed SQL as root via PHP..."
+    php -r "
+      mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+      \$c = new mysqli('$DB_HOST', 'root', '$DB_ROOT_PASS', '$DB_NAME');
+      \$c->set_charset('utf8mb4');
+      \$sql = file_get_contents('$CLEAN_SQL');
+      if (!\$c->multi_query(\$sql)) {
+        fwrite(STDERR, 'Import failed: ' . \$c->error . PHP_EOL);
+        exit(1);
+      }
+      // Drain all result sets
+      do {
+        if (\$result = \$c->store_result()) { \$result->free(); }
+      } while (\$c->more_results() && \$c->next_result());
+
+      if (\$c->errno) {
+        fwrite(STDERR, 'Error during import: ' . \$c->error . PHP_EOL);
+        exit(1);
+      }
+      echo 'done';
+    "
+    log "Seed SQL imported successfully."
+    rm -f "$CLEAN_SQL"
   else
-    log "No seed.sql found — running fresh wp core install..."
+    log "No seed.sql — running fresh wp core install..."
     wp core install \
       --url="${WP_URL}" \
       --title="${WP_TITLE}" \
@@ -76,10 +105,10 @@ if [ "$TABLE_COUNT" -lt 2 ]; then
     exit 0
   fi
 else
-  log "Database already has $TABLE_COUNT tables — skipping import."
+  log "Database already populated — skipping import."
 fi
 
-# ── 4. Patch admin credentials from .env ─────────────────────────
+# ── 5. Patch admin credentials from .env ─────────────────────────
 log "Updating admin user (ID 1) from environment variables..."
 
 wp user update 1 \
@@ -90,12 +119,12 @@ wp user update 1 \
 
 log "Admin credentials updated from .env."
 
-# ── 5. Patch site URL ───────────────────────────────────────────
+# ── 6. Patch site URL ───────────────────────────────────────────
 log "Setting site URL to ${WP_URL}..."
-wp option update siteurl "${WP_URL}" 2>/dev/null || true
-wp option update home "${WP_URL}" 2>/dev/null || true
+wp option update siteurl "${WP_URL}"
+wp option update home "${WP_URL}"
 
-# ── 6. Flush ─────────────────────────────────────────────────────
+# ── 7. Flush ─────────────────────────────────────────────────────
 wp rewrite flush --hard 2>/dev/null || true
 wp cache flush 2>/dev/null || true
 
